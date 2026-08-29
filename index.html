@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>India Runner</title>
+
+<style>
+    * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+    }
+
+    body {
+        background: #111;
+        overflow: hidden;
+        font-family: Arial, sans-serif;
+    }
+
+    canvas {
+        display: block;
+        margin: auto;
+        background: #87CEEB;
+    }
+
+    #instructions {
+        position: fixed;
+        top: 15px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: white;
+        background: rgba(0,0,0,0.65);
+        padding: 10px 18px;
+        border-radius: 8px;
+        z-index: 10;
+        font-size: 15px;
+    }
+</style>
+</head>
+
+<body>
+
+<div id="instructions">
+    ← → Move | ↑ Jump | Collect coins | Avoid trains
+</div>
+
+<canvas id="game"></canvas>
+
+<script>
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+canvas.width = 1000;
+canvas.height = 650;
+
+let gameRunning = true;
+let score = 0;
+let coins = 0;
+let speed = 7;
+
+const lanes = [360, 500, 640];
+
+const player = {
+    lane: 1,
+    x: lanes[1],
+    y: 500,
+    width: 45,
+    height: 70,
+    velocityY: 0,
+    jumping: false
+};
+
+let obstacles = [];
+let coinObjects = [];
+
+let spawnTimer = 0;
+let coinTimer = 0;
+
+
+/* -------------------------
+   BACKGROUND
+------------------------- */
+
+function drawBackground() {
+
+    // Sky
+    ctx.fillStyle = "#76c7e8";
+    ctx.fillRect(0, 0, canvas.width, 360);
+
+    // Sun
+    ctx.fillStyle = "#FFD54F";
+    ctx.beginPath();
+    ctx.arc(850, 90, 45, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Distant buildings
+    ctx.fillStyle = "#d6b48c";
+
+    for(let i = 0; i < 10; i++) {
+
+        let x = i * 110;
+        let h = 80 + (i % 3) * 30;
+
+        ctx.fillRect(x, 360 - h, 90, h);
+
+        ctx.fillStyle = "#333";
+
+        for(let w = 0; w < 3; w++) {
+            ctx.fillRect(x + 15 + w * 22, 380 - h, 12, 15);
+        }
+
+        ctx.fillStyle = "#d6b48c";
+    }
+
+    // Railway platform
+    ctx.fillStyle = "#777";
+    ctx.fillRect(0, 360, canvas.width, 290);
+
+    // Railway tracks
+    ctx.fillStyle = "#333";
+
+    ctx.fillRect(290, 360, 20, 290);
+    ctx.fillRect(690, 360, 20, 290);
+
+    // Track sleepers
+    ctx.fillStyle = "#704214";
+
+    for(let y = 370; y < 650; y += 45) {
+        ctx.fillRect(250, y, 500, 12);
+    }
+
+    // Running path
+    ctx.fillStyle = "#444";
+    ctx.fillRect(320, 360, 360, 290);
+
+    // Lane lines
+    ctx.strokeStyle = "#ddd";
+    ctx.lineWidth = 4;
+    ctx.setLineDash([25, 25]);
+
+    ctx.beginPath();
+    ctx.moveTo(430, 360);
+    ctx.lineTo(430, 650);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(570, 360);
+    ctx.lineTo(570, 650);
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+
+    // Indian railway sign
+    ctx.fillStyle = "#eee";
+    ctx.fillRect(30, 120, 220, 70);
+
+    ctx.fillStyle = "#333";
+    ctx.font = "bold 24px Arial";
+    ctx.fillText("INDIAN RAILWAYS", 45, 150);
+
+    ctx.font = "18px Arial";
+    ctx.fillText("भारत रेल", 90, 178);
+}
+
+
+/* -------------------------
+   PLAYER
+------------------------- */
+
+function drawPlayer() {
+
+    player.x += (lanes[player.lane] - player.x) * 0.2;
+
+    // Shadow
+    ctx.fillStyle = "rgba(0,0,0,0.3)";
+    ctx.beginPath();
+    ctx.ellipse(
+        player.x,
+        player.y + 70,
+        30,
+        8,
+        0,
+        0,
+        Math.PI * 2
+    );
+    ctx.fill();
+
+    // Legs
+    ctx.strokeStyle = "#222";
+    ctx.lineWidth = 8;
+
+    ctx.beginPath();
+    ctx.moveTo(player.x - 10, player.y + 45);
+    ctx.lineTo(player.x - 15, player.y + 68);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(player.x + 10, player.y + 45);
+    ctx.lineTo(player.x + 15, player.y + 68);
+    ctx.stroke();
+
+    // Shoes
+    ctx.fillStyle = "#111";
+    ctx.fillRect(player.x - 23, player.y + 64, 18, 8);
+    ctx.fillRect(player.x + 5, player.y + 64, 18, 8);
+
+    // Body
+    ctx.fillStyle = "#1565C0";
+    ctx.fillRect(player.x - 20, player.y + 15, 40, 35);
+
+    // Shirt stripe
+    ctx.fillStyle = "#FF9933";
+    ctx.fillRect(player.x - 20, player.y + 28, 40, 7);
+
+    // Arms
+    ctx.strokeStyle = "#c68642";
+    ctx.lineWidth = 9;
+
+    ctx.beginPath();
+    ctx.moveTo(player.x - 18, player.y + 20);
+    ctx.lineTo(player.x - 32, player.y + 38);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(player.x + 18, player.y + 20);
+    ctx.lineTo(player.x + 32, player.y + 38);
+    ctx.stroke();
+
+    // Head
+    ctx.fillStyle = "#c68642";
+    ctx.beginPath();
+    ctx.arc(player.x, player.y, 20, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Hair
+    ctx.fillStyle = "#222";
+    ctx.beginPath();
+    ctx.arc(player.x, player.y - 7, 19, Math.PI, Math.PI * 2);
+    ctx.fill();
+
+    // Face
+    ctx.fillStyle = "#222";
+    ctx.beginPath();
+    ctx.arc(player.x - 7, player.y, 2, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(player.x + 7, player.y, 2, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+
+/* -------------------------
+   POLICE
+------------------------- */
+
+function drawPolice() {
+
+    let px = player.x - 100;
+    let py = 540;
+
+    // Body
+    ctx.fillStyle = "#1b5e20";
+    ctx.fillRect(px - 17, py, 34, 45);
+
+    // Head
+    ctx.fillStyle = "#c68642";
+    ctx.beginPath();
+    ctx.arc(px, py - 12, 15, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Police cap
+    ctx.fillStyle = "#222";
+    ctx.fillRect(px - 17, py - 27, 34, 7);
+
+    // Legs
+    ctx.strokeStyle = "#222";
+    ctx.lineWidth = 7;
+
+    ctx.beginPath();
+    ctx.moveTo(px - 8, py + 42);
+    ctx.lineTo(px - 15, py + 65);
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(px + 8, py + 42);
+    ctx.lineTo(px + 15, py + 65);
+    ctx.stroke();
+}
+
+
+/* -------------------------
+   OBSTACLES
+------------------------- */
+
+function spawnObstacle() {
+
+    let lane = Math.floor(Math.random() * 3);
+
+    obstacles.push({
+        lane: lane,
+        x: lanes[lane],
+        y: -100,
+        width: 75,
+        height: 90,
+        type: Math.random() > 0.5 ? "train" : "barrier"
+    });
+}
+
+
+function drawObstacle(o) {
+
+    if(o.type === "train") {
+
+        // Train
+        ctx.fillStyle = "#e53935";
+        ctx.fillRect(
+            o.x - 38,
+            o.y,
+            o.width,
+            o.height
+        );
+
+        // Train roof
+        ctx.fillStyle = "#333";
+        ctx.fillRect(
+            o.x - 43,
+            o.y - 8,
+            85,
+            10
+        );
+
+        // Windows
+        ctx.fillStyle = "#90CAF9";
+
+        for(let i = 0; i < 3; i++) {
+            ctx.fillRect(
+                o.x - 28 + i * 25,
+                o.y + 20,
+                18,
+                20
+            );
+        }
+
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 13px Arial";
+        ctx.fillText(
+            "RAIL",
+            o.x - 18,
+            o.y + 70
+        );
+
+    } else {
+
+        // Barricade
+        ctx.fillStyle = "#ff9800";
+
+        ctx.fillRect(
+            o.x - 38,
+            o.y + 25,
+            76,
+            30
+        );
+
+        ctx.fillStyle = "#222";
+
+        for(let i = 0; i < 3; i++) {
+
+            ctx.fillRect(
+                o.x - 35 + i * 25,
+                o.y + 25,
+                10,
+                30
+            );
+        }
+    }
+}
+
+
+/* -------------------------
+   COINS
+------------------------- */
+
+function spawnCoin() {
+
+    let lane = Math.floor(Math.random() * 3);
+
+    coinObjects.push({
+        lane: lane,
+        x: lanes[lane],
+        y: -30,
+        radius: 12
+    });
+}
+
+
+function drawCoin(c) {
+
+    ctx.fillStyle = "#FFD700";
+
+    ctx.beginPath();
+
+    ctx.arc(
+        c.x,
+        c.y,
+        c.radius,
+        0,
+        Math.PI * 2
+    );
+
+    ctx.fill();
+
+    ctx.fillStyle = "#b8860b";
+    ctx.font = "bold 14px Arial";
+    ctx.fillText("₹", c.x - 5, c.y + 5);
+}
+
+
+/* -------------------------
+   COLLISION
+------------------------- */
+
+function collision(a, b) {
+
+    return (
+        a.x - a.width / 2 <
+        b.x + b.width / 2 &&
+
+        a.x + a.width / 2 >
+        b.x - b.width / 2 &&
+
+        a.y + a.height >
+        b.y &&
+
+        a.y <
+        b.y + b.height
+    );
+}
+
+
+/* -------------------------
+   GAME UPDATE
+------------------------- */
+
+function update() {
+
+    if(!gameRunning) return;
+
+    spawnTimer++;
+
+    if(spawnTimer > Math.max(35, 75 - speed * 3)) {
+
+        spawnObstacle();
+        spawnTimer = 0;
+    }
+
+    coinTimer++;
+
+    if(coinTimer > 45) {
+
+        spawnCoin();
+        coinTimer = 0;
+    }
+
+    // Speed slowly increases
+    speed += 0.001;
+
+    // Player gravity
+    if(player.jumping) {
+
+        player.velocityY += 0.7;
+        player.y += player.velocityY;
+
+        if(player.y >= 500) {
+
+            player.y = 500;
+            player.velocityY = 0;
+            player.jumping = false;
+        }
+    }
+
+    // Obstacles
+    obstacles.forEach(o => {
+
+        o.y += speed;
+
+        let playerBox = {
+            x: player.x,
+            y: player.y,
+            width: player.width,
+            height: player.height
+        };
+
+        let obstacleBox = {
+            x: o.x,
+            y: o.y,
+            width: o.width,
+            height: o.height
+        };
+
+        if(collision(playerBox, obstacleBox)) {
+
+            gameOver();
+        }
+    });
+
+    obstacles = obstacles.filter(o => o.y < 700);
+
+    // Coins
+    coinObjects.forEach(c => {
+
+        c.y += speed;
+
+        let distance =
+            Math.abs(player.x - c.x) +
+            Math.abs(player.y - c.y);
+
+        if(distance < 55) {
+
+            coins++;
+            score += 10;
+
+            c.collected = true;
+        }
+    });
+
+    coinObjects =
+        coinObjects.filter(c =>
+            c.y < 700 && !c.collected
+        );
+
+    score++;
+}
+
+
+/* -------------------------
+   GAME OVER
+------------------------- */
+
+function gameOver() {
+
+    gameRunning = false;
+
+    setTimeout(() => {
+
+        alert(
+            "GAME OVER\n\n" +
+            "Score: " + score +
+            "\nCoins: " + coins +
+            "\n\nPress ENTER to restart"
+        );
+
+    }, 100);
+}
+
+
+/* -------------------------
+   DRAW
+------------------------- */
+
+function draw() {
+
+    drawBackground();
+
+    obstacles.forEach(drawObstacle);
+
+    coinObjects.forEach(drawCoin);
+
+    drawPolice();
+
+    drawPlayer();
+
+    // Score
+    ctx.fillStyle = "white";
+    ctx.font = "bold 24px Arial";
+
+    ctx.fillText(
+        "Score: " + score,
+        25,
+        40
+    );
+
+    ctx.fillText(
+        "₹ Coins: " + coins,
+        25,
+        72
+    );
+
+    ctx.fillText(
+        "Speed: " + speed.toFixed(1),
+        25,
+        104
+    );
+
+    if(!gameRunning) {
+
+        ctx.fillStyle = "rgba(0,0,0,0.65)";
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+
+        ctx.fillStyle = "white";
+        ctx.textAlign = "center";
+
+        ctx.font = "bold 55px Arial";
+        ctx.fillText(
+            "INDIA RUNNER",
+            canvas.width / 2,
+            260
+        );
+
+        ctx.font = "bold 35px Arial";
+        ctx.fillText(
+            "GAME OVER",
+            canvas.width / 2,
+            320
+        );
+
+        ctx.font = "22px Arial";
+        ctx.fillText(
+            "Press ENTER to play again",
+            canvas.width / 2,
+            370
+        );
+
+        ctx.textAlign = "left";
+    }
+}
+
+
+/* -------------------------
+   CONTROLS
+------------------------- */
+
+document.addEventListener("keydown", function(e) {
+
+    if(e.key === "ArrowLeft") {
+
+        player.lane--;
+
+        if(player.lane < 0)
+            player.lane = 0;
+    }
+
+    if(e.key === "ArrowRight") {
+
+        player.lane++;
+
+        if(player.lane > 2)
+            player.lane = 2;
+    }
+
+    if(e.key === "ArrowUp") {
+
+        if(!player.jumping) {
+
+            player.jumping = true;
+            player.velocityY = -16;
+        }
+    }
+
+    if(e.key === "Enter") {
+
+        if(!gameRunning) {
+
+            location.reload();
+        }
+    }
+});
+
+
+/* -------------------------
+   GAME LOOP
+------------------------- */
+
+function gameLoop() {
+
+    update();
+    draw();
+
+    requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+
+</script>
+
+</body>
+</html>
